@@ -1579,10 +1579,13 @@ function renderWeather(w){
   }
 }
 
-/* ---------- AI 规划（DeepSeek） ----------
+/* ---------- AI 规划（Agnes 网关，OpenAI 兼容协议） ----------
    注意：key 在前端是明文，仅适合本机自用；对外发布请改走后端代理 */
-const DS_KEY = 'sk-b611630fa5c6402fbe2aed1306ec6cd1';
-const DS_API = 'https://api.deepseek.com/chat/completions';
+const DS_KEY = 'sk-RviZSlPRc9mAo26oEApJET741PEGBY8Al8J3rVfgrpPLdrrX';
+const DS_API = 'https://apihub.agnes-ai.com/v1/chat/completions';
+/* 用 flash 而不是 pro：pro 是推理模型，会先输出一大段思考过程再给答案，
+   token 消耗高、延迟也长；flash 不思考，直接吐 JSON，规划这种结构化任务够用 */
+const DS_MODEL = 'agnes-3.0-flash';
 
 const AI_SYS = [
   '你是北京本地行程规划师。给定出发地、日期、每天可用小时数，以及一组候选景点（含经纬度、建议停留时长、开放时间、是否周一闭馆），请把它们分配到各天，并在每天内部排出顺路顺序。',
@@ -1651,13 +1654,13 @@ function aiPlan(){
   const btn = $('#aiPlan');
   if (btn){ btn.disabled = true; btn.textContent = 'AI 思考中…'; }
   const body = {
-    model: 'deepseek-chat',
+    model: DS_MODEL,
     messages: [
       { role: 'system', content: AI_SYS },
       { role: 'user', content: JSON.stringify(aiBrief()) }
     ],
     temperature: 0.3,
-    max_tokens: 1200,
+    max_tokens: 2000,
     response_format: { type: 'json_object' }
   };
   fetch(DS_API, {
@@ -1670,8 +1673,12 @@ function aiPlan(){
       return r.json();
     })
     .then(function(d){
-      const txt = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
+      let txt = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
       if (!txt) throw new Error('返回内容为空');
+      // 有的网关会把 JSON 包在 ```json 代码块里，剥掉再解析
+      txt = String(txt).trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+      const s0 = txt.indexOf('{'), e0 = txt.lastIndexOf('}');
+      if (s0 >= 0 && e0 > s0) txt = txt.slice(s0, e0 + 1);
       applyAiPlan(JSON.parse(txt));
     })
     .catch(function(e){
